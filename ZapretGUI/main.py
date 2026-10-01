@@ -46,9 +46,11 @@ except ImportError:
 from config.settings import Settings
 from config.locales import Loc
 from core.zapret_manager import ZapretManager, find_zapret_root
+from ui.scroll import install_global_wheel_router
 
 from ui.dashboard_tab import DashboardTab
 from ui.profiles_tab import ProfilesTab
+from ui.test_tab import TestTab
 from ui.lists_tab import ListsTab
 from ui.settings_tab import SettingsTab
 from ui.help_tab import HelpTab
@@ -59,6 +61,7 @@ ctk.set_default_color_theme("blue")
 NAV_ITEMS = [
     ("nav_dashboard", "dashboard"),
     ("nav_profiles",  "profiles"),
+    ("nav_test",      "test"),
     ("nav_lists",     "lists"),
     ("nav_settings",  "settings"),
     ("nav_help",      "help"),
@@ -127,6 +130,7 @@ class ZapretApp(ctk.CTk):
         self.tabs = {
             "dashboard": DashboardTab(self.container, self),
             "profiles":  ProfilesTab(self.container, self),
+            "test":      TestTab(self.container, self),
             "lists":     ListsTab(self.container, self),
             "settings":  SettingsTab(self.container, self),
             "help":      HelpTab(self.container, self),
@@ -137,6 +141,9 @@ class ZapretApp(ctk.CTk):
         # ---------- события менеджера -> UI --------------------------------
         self.manager.on_log = lambda line: self.after(0, self._append_log, line)
         self.manager.on_status = lambda st: self.after(0, self._refresh_status, st)
+
+        # глобальная маршрутизация колеса мыши (чинит «не скроллит нигде»)
+        install_global_wheel_router(self)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._tray = None

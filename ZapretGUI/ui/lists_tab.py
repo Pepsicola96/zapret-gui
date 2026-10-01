@@ -8,6 +8,7 @@ import tkinter.simpledialog as sd
 import customtkinter as ctk
 
 from core.lists_model import ListsEditorModel
+from ui.scroll import bind_mousewheel, scrollable_frame_wheel
 
 
 class ListsTab(ctk.CTkFrame):
@@ -23,8 +24,8 @@ class ListsTab(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
 
         # ---------------- левая колонка: список файлов ----------------------
-        left = ctk.CTkFrame(self, corner_radius=12)
-        left.grid(row=0, column=0, sticky="ns", padx=(16, 8), pady=16)
+        left = ctk.CTkScrollableFrame(self, corner_radius=12, width=270)
+        left.grid(row=0, column=0, sticky="nsew", padx=(16, 8), pady=16)
         left.grid_rowconfigure(1, weight=1)
         left.grid_columnconfigure(0, weight=1)
 
@@ -32,10 +33,10 @@ class ListsTab(ctk.CTkFrame):
                      font=ctk.CTkFont(size=14, weight="bold")
                      ).grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
 
-        self.files_list = ctk.CTkScrollableFrame(left, width=230, height=430,
-                                                 fg_color="transparent")
-        self.files_list.grid(row=1, column=0, padx=8, pady=4, sticky="nsew")
-        self.files_list.grid_columnconfigure(0, weight=1)
+        self.files_frame = ctk.CTkFrame(left, fg_color="transparent")
+        self.files_frame.grid(row=1, column=0, padx=8, pady=4, sticky="nsew")
+        self.files_frame.grid_columnconfigure(0, weight=1)
+        scrollable_frame_wheel(left)
         self.file_buttons = {}
 
         btns = ctk.CTkFrame(left, fg_color="transparent")
@@ -75,6 +76,7 @@ class ListsTab(ctk.CTkFrame):
             right, font=ctk.CTkFont(family="Consolas", size=13))
         self.editor.grid(row=2, column=0, sticky="nsew", padx=12,
                          pady=(2, 8))
+        bind_mousewheel(self.editor)
         self.editor.bind("<<Modified>>", lambda e: self._mark_dirty())
         self.editor.bind("<Control-s>", lambda e: self._save())
 
@@ -87,7 +89,7 @@ class ListsTab(ctk.CTkFrame):
 
     # ------------------------------------------------------------- файлы UI
     def refresh_files(self):
-        for w in self.files_list.winfo_children():
+        for w in self.files_frame.winfo_children():
             w.destroy()
         self.file_buttons.clear()
         files = self.model.list_files()
@@ -95,12 +97,12 @@ class ListsTab(ctk.CTkFrame):
             txt = ("Папка lists не найдена.\nПроверьте путь к комплекту\nв «Настройках»."
                    if self.loc.lang == "ru" else
                    "lists folder not found.\nCheck the path in Settings.")
-            ctk.CTkLabel(self.files_list, text=txt,
+            ctk.CTkLabel(self.files_frame, text=txt,
                          text_color="gray55").grid(row=0, column=0, pady=20)
             return
         for i, (name, path) in enumerate(files):
             count = self.model.count_domains(path)
-            b = ctk.CTkButton(self.files_list,
+            b = ctk.CTkButton(self.files_frame,
                               text=f"{name}  ({count})", anchor="w",
                               height=32, corner_radius=6,
                               fg_color="transparent",

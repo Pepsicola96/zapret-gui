@@ -70,19 +70,30 @@ class ProfilesTab(ctk.CTkFrame):
         self.strategy_var = ctk.StringVar(value=self.settings.get("strategy"))
         strat_frame = ctk.CTkScrollableFrame(scard, height=210,
                                              fg_color="transparent")
-        strat_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        strat_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 4))
         strat_frame.grid_columnconfigure(0, weight=1)
         self.strategy_btns = {}
+        prev_gamer = None
         for i, st in enumerate(STRATEGIES):
+            # разделитель секции геймерских режимов
+            if st.gamer and prev_gamer is False:
+                sep = ctk.CTkLabel(
+                    strat_frame, text="🎮  " + self.loc.t("gamer_section"),
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color="#5b9bd5")
+                sep.grid(row=i, column=0, padx=16, pady=(10, 2), sticky="w")
+            prev_gamer = st.gamer
             label = f"{st.name}"
             if st.recommended:
                 label += f"  ⭐ ({self.loc.t('recommended')})"
+            if st.gamer:
+                label += f"  [{self.loc.t('gamer_badge')}]"
             rb = ctk.CTkRadioButton(
                 strat_frame, text=label,
                 variable=self.strategy_var, value=st.id,
                 font=ctk.CTkFont(size=13),
                 command=lambda s=st: self._strategy_hint(s))
-            rb.grid(row=i, column=0, padx=16, pady=3, sticky="w")
+            rb.grid(row=i + 1, column=0, padx=16, pady=3, sticky="w")
             self.strategy_btns[st.id] = rb
 
         self.hint_lbl = ctk.CTkLabel(
@@ -126,10 +137,15 @@ class ProfilesTab(ctk.CTkFrame):
     # ------------------------------------------------------------------ логика
     def _hint_for(self, sid):
         st = STRATEGY_MAP.get(sid)
-        return st.description if st else ""
+        if not st:
+            return ""
+        txt = st.description
+        if st.gamer and st.gamer_note:
+            txt += "\n🎮 " + st.gamer_note
+        return txt
 
     def _strategy_hint(self, st):
-        self.hint_lbl.configure(text=st.description)
+        self.hint_lbl.configure(text=self._hint_for(st.id))
 
     def _collect(self):
         self.settings.set("profile", self.profile_var.get())

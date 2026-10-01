@@ -1,6 +1,6 @@
 {
   "zapret_path": "/tmp/fakekit",
-  "strategy": "alt3",
+  "strategy": "alt2",
   "profile": "discord_youtube",
   "custom_args": "",
   "autostart": false,

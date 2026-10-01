@@ -8,6 +8,8 @@ import threading
 
 import customtkinter as ctk
 
+from ui.scroll import bind_mousewheel
+
 
 class DashboardTab(ctk.CTkFrame):
     def __init__(self, master, app):
@@ -104,6 +106,7 @@ class DashboardTab(ctk.CTkFrame):
             family="Consolas", size=12), wrap="none")
         self.log_box.grid(row=4, column=0, sticky="nsew", padx=16, pady=(2, 16))
         self.log_box.configure(state="disabled")
+        bind_mousewheel(self.log_box)
 
         # стартовая запись
         self.append_log("[i] Zapret GUI готов к работе. Путь комплекта: "

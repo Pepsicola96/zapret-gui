@@ -45,6 +45,8 @@ class Strategy:
     description: str           # для подсказки в интерфейсе
     args: list = field(default_factory=list)   # аргументы bp.bat / service
     recommended: bool = False
+    gamer: bool = False        # геймерский режим (bat-файлы *_gamer в комплекте)
+    gamer_note: str = ""       # особенности геймерского режима для UI
 
 STRATEGIES = [
     Strategy(
@@ -90,6 +92,67 @@ STRATEGIES = [
     Strategy(
         "zaproto", "Zapret Proto", "Экспериментальный режим zaproto (ifb/qdisc не нужны на Windows).",
         ["--tndns-disabled", "--filter-tcp=2", "--filter-udp=443"],
+    ),
+    # ------------------------------------------------------------------
+    # ГЕЙМЕРСКИЙ РЕЖИМ (в комплекте — файлы вида alt_3_proton_gamer.bat,
+    # main_gamer.bat и т.п.). Отличие от обычной стратегии: обходятся
+    # только игровые домены (Steam, Epic, Battle.net, Roblox, Minecraft,
+    # Origin/EA, Riot и пр.), а все остальные сайты идут НАПРЯМУЮ без
+    # десинхронизации пакетов. Это снижает лишний трафик и потенциальные
+    # задержки/проблемы на сервисах, которые DPI и не блокирует.
+    # ВАЖНО: в геймерском режиме Discord/YouTube обходятся ТОЛЬКО если они
+    # входят в игровой список комплекта; для обычного D/Y используйте
+    # обычные стратегии.
+    # ------------------------------------------------------------------
+    Strategy(
+        "main_gamer", "main (геймерский)",
+        "Геймерский режим базовой стратегии: фильтруются только игровые домены, "
+        "остальной трафик идёт напрямую. Минимальное вмешательство в сеть.",
+        ["--tndns-disabled", "--filter-tcp=2", "--filter-udp=80", "--filter-udp=443"],
+        gamer=True,
+        gamer_note="Обходятся только игровые домены (Steam/Epic/Battle.net/Roblox/Minecraft...). "
+                   "Discord и YouTube в этом режиме могут НЕ работать, если их нет в игровом списке.",
+    ),
+    Strategy(
+        "alt1_gamer", "alt1 (геймерский)",
+        "Геймерский вариант alt1: фрагментация TLS только для игровых доменов.",
+        ["--tndns-disabled", "--filter-tcp=2", "--dpi-desync=fake",
+         "--dpi-desync-repeats=6", "--filter-udp=443", "--dpi-desync=fake",
+         "--dpi-desync-cutoff=n2", "--dpi-desync-split-pos=1"],
+        gamer=True,
+        gamer_note="Тот же приём, что alt1, но список доменов — игровой. "
+                   "Остальные сайты не трогаются — меньше риска лагов на сторонних сервисах.",
+    ),
+    Strategy(
+        "alt2_gamer", "alt2 (геймерский)",
+        "Геймерский вариант alt2 (fake+multiseq) — рекомендуется для игр.",
+        ["--tndns-disabled", "--filter-tcp=2", "--dpi-desync=fake,multiseq,disorder",
+         "--dpi-desync-split-pos=method", "--dpi-desync-repeats=6",
+         "--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-cutoff=d2"],
+        recommended=False, gamer=True,
+        gamer_note="Компромисс «стабильность/агрессивность» только для игрового трафика. "
+                   "Если игры лагают на обычной alt2 — попробуйте эту.",
+    ),
+    Strategy(
+        "alt3_gamer", "alt3 (геймерский)",
+        "Геймерский вариант alt3: агрессивная фрагментация для игровых доменов.",
+        ["--tndns-disabled", "--filter-tcp=2", "--dpi-desync=fake,multiseq,disorder",
+         "--dpi-desync-split-pos=2", "--dpi-desync-repeats=8",
+         "--dpi-desync-ttl=5", "--filter-udp=443", "--dpi-desync=fake"],
+        gamer=True,
+        gamer_note="Для «упорных» блокировок игровых сервисов. Возможна более высокая "
+                   "задержка на самих играх — сравните с alt2_gamer в тестере стратегий.",
+    ),
+    Strategy(
+        "alt4_proton_gamer", "alt4 Proton (геймерский)",
+        "Геймерский режим для Proton/Steam Play (Linux-игры на Windows-локальных "
+        "серверах, Steam-стриминг): UDP-акцент для игровых портов.",
+        ["--tndns-disabled", "--filter-tcp=2", "--dpi-desync=fake",
+         "--filter-udp=443,50000-65535", "--dpi-desync=fake",
+         "--dpi-desync-cutoff=n3"],
+        gamer=True,
+        gamer_note="Полезен при проблемах со Steam/Proton-играми и голосовым чатом Steam. "
+                   "Широкий диапазон UDP-портов может создавать дополнительную нагрузку — следите за пингом.",
     ),
 ]
 

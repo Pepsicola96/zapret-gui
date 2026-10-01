@@ -152,6 +152,17 @@ class ZapretManager:
     def _profile_list_args(self):
         """Аргументы --domain-list-file для выбранных профилей."""
         profile = self.settings.get("profile", "discord_youtube")
+        # геймерские стратегии комплекта работают со своим списком игровых
+        # доменов (games.txt / list_game_domain.txt); если его нет — берём
+        # обычный профиль пользователя
+        from config.profiles import STRATEGY_MAP
+        strat = STRATEGY_MAP.get(self.settings.get("strategy", ""))
+        if strat and getattr(strat, "gamer", False):
+            for gname in ("games.txt", "game_domains.txt",
+                          "list_game_domain.txt"):
+                gpath = os.path.join(self.lists_dir(), gname)
+                if os.path.isfile(gpath):
+                    return [f"--domain-list-file={gpath}"]
         fname_map = {
             "discord": "discord_domains.txt",
             "youtube": "youtube.txt",

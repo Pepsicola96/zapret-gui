@@ -7,6 +7,7 @@ LOCALES = {
         # навигация
         "nav_dashboard": "Панель управления",
         "nav_profiles": "Профили и стратегия",
+        "nav_test": "Тест стратегий",
         "nav_lists": "Редактор списков",
         "nav_settings": "Настройки",
         "nav_help": "Справка",
@@ -65,6 +66,44 @@ LOCALES = {
         "logging_enabled": "Записывать журнал в файл zapret_gui.log",
         "save_settings": "Сохранить настройки",
         "settings_saved": "Настройки сохранены.",
+        # тест стратегий
+        "test_title": "Тестирование и выбор лучшей стратегии",
+        "test_intro": "Автоматически переберёт выбранные стратегии: для каждой "
+                      "кратковременно запустит Zapret, проверит доступность "
+                      "Discord/YouTube и замерит задержку. В конце покажет рейтинг "
+                      "и позволит применить победителя одной кнопкой.",
+        "test_select_all": "Выбрать все",
+        "test_select_none": "Снять выбор",
+        "test_rounds": "Раундов на стратегию",
+        "test_settle": "Пауза на поднятие сервиса, сек",
+        "btn_test_start": "🧪  Начать тестирование",
+        "btn_test_stop": "Остановить тест",
+        "test_col_strategy": "Стратегия",
+        "test_col_status": "Статус",
+        "test_col_success": "Успешных",
+        "test_col_latency": "Ср. задержка",
+        "test_col_verdict": "Вердикт",
+        "test_best": "Лучшая стратегия",
+        "btn_apply_best": "Применить лучшую стратегию",
+        "test_running": "Тестируется",
+        "test_phase_stop": "останавливаю сервис…",
+        "test_phase_start": "запускаю стратегию…",
+        "test_phase_test": "замеры доступности…",
+        "test_phase_cleanup": "завершение…",
+        "test_done": "Тестирование завершено.",
+        "test_cancelled": "Тестирование остановлено пользователем.",
+        "test_need_strategies": "Выберите хотя бы одну стратегию для теста.",
+        "test_warning": "Во время теста сервис будет перезапускаться — возможны "
+                        "короткие обрывы соединения. Не запускайте во время игры/звонка.",
+        # геймерский режим
+        "gamer_badge": "🎮 геймерский",
+        "gamer_section": "Геймерские режимы (только игровые домены)",
+        "gamer_explain": "В геймерском режиме обходятся только игровые домены "
+                         "(Steam, Epic, Battle.net, Roblox, Minecraft, Riot и пр.), "
+                         "а остальные сайты идут напрямую без десинхронизации — "
+                         "меньше риска лагов на сторонних сервисах. Внимание: "
+                         "Discord/YouTube в этом режиме могут не работать, если их "
+                         "нет в игровом списке комплекта.",
         # справка
         "help_title": "Справка",
         "about": "О программе",
@@ -83,6 +122,7 @@ LOCALES = {
         "app_title": "Zapret GUI — control panel for zapret-discord-youtube",
         "nav_dashboard": "Dashboard",
         "nav_profiles": "Profiles & Strategy",
+        "nav_test": "Strategy Test",
         "nav_lists": "Domain Lists",
         "nav_settings": "Settings",
         "nav_help": "Help",
@@ -136,6 +176,40 @@ LOCALES = {
         "logging_enabled": "Write log to zapret_gui.log",
         "save_settings": "Save settings",
         "settings_saved": "Settings saved.",
+        "test_title": "Strategy testing & best-strategy finder",
+        "test_intro": "Automatically iterates over selected strategies: briefly starts "
+                      "Zapret with each one, checks Discord/YouTube availability and "
+                      "measures latency, then ranks results and lets you apply the winner.",
+        "test_select_all": "Select all",
+        "test_select_none": "Clear selection",
+        "test_rounds": "Rounds per strategy",
+        "test_settle": "Service settle time, sec",
+        "btn_test_start": "🧪  Start test",
+        "btn_test_stop": "Stop test",
+        "test_col_strategy": "Strategy",
+        "test_col_status": "Status",
+        "test_col_success": "Success",
+        "test_col_latency": "Avg latency",
+        "test_col_verdict": "Verdict",
+        "test_best": "Best strategy",
+        "btn_apply_best": "Apply best strategy",
+        "test_running": "Testing",
+        "test_phase_stop": "stopping service…",
+        "test_phase_start": "starting strategy…",
+        "test_phase_test": "measuring availability…",
+        "test_phase_cleanup": "finishing…",
+        "test_done": "Testing finished.",
+        "test_cancelled": "Testing cancelled by user.",
+        "test_need_strategies": "Select at least one strategy to test.",
+        "test_warning": "The service will restart during the test — expect short "
+                        "connection drops. Do not run while gaming or in a call.",
+        "gamer_badge": "🎮 gamer",
+        "gamer_section": "Gamer modes (game domains only)",
+        "gamer_explain": "Gamer mode bypasses only game domains (Steam, Epic, Battle.net, "
+                         "Roblox, Minecraft, Riot etc.); all other traffic goes direct "
+                         "without desync — less risk of lag on unrelated services. Note: "
+                         "Discord/YouTube may NOT work in this mode unless included in "
+                         "the kit's game list.",
         "help_title": "Help",
         "about": "About",
         "links": "Useful links",
