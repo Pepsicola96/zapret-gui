@@ -1,0 +1,7 @@
+# Compiled/Binary files
+__pycache__/
+*.pyc
+
+# Dependency directories
+venv/
+.venv/

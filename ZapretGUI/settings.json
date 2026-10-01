@@ -1,0 +1,17 @@
+{
+  "zapret_path": "/tmp/fakekit",
+  "strategy": "alt3",
+  "profile": "discord_youtube",
+  "custom_args": "",
+  "autostart": false,
+  "https_proxy": false,
+  "use_nat": true,
+  "proxy_port": 3128,
+  "enable_discord": true,
+  "enable_youtube": true,
+  "enable_reports": false,
+  "theme": "dark",
+  "language": "ru",
+  "minimize_to_tray": true,
+  "logging_enabled": true
+}
