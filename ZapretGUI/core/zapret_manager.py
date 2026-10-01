@@ -25,6 +25,12 @@ from dataclasses import dataclass
 IS_WINDOWS = sys.platform.startswith("win")
 
 
+# Флаг создания процесса: дочерний процесс создаётся БЕЗ окна консоли вовсе
+# (STARTF_USESHOWWINDOW+SWHide лишь «скрывает» окно, и cmd.exe иногда всё
+# равно мелькает на экране; CREATE_NO_WINDOW не создаёт его вообще).
+NO_WINDOW_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
+
+
 def _startupinfo():
     """Скрывать консольное окно при запуске дочерних процессов на Windows."""
     if not IS_WINDOWS:
@@ -33,6 +39,16 @@ def _startupinfo():
     si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     si.wShowWindow = subprocess.SW_HIDE
     return si
+
+
+def _win_spawn_kwargs(new_group: bool = False) -> dict:
+    """Единые параметры скрытого спавна для Windows."""
+    if not IS_WINDOWS:
+        return {}
+    flags = NO_WINDOW_FLAGS
+    if new_group:
+        flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    return {"startupinfo": _startupinfo(), "creationflags": flags}
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +316,15 @@ class ZapretManager:
         root = self.root()
         if not root:
             return ""
-        # 1) точные шаблоны имён
+        # -1) точное имя файла по id стратегии (поддержка «обнаруженных»
+        #     стратегий вида alt5_proton / custom__ext из реального комплекта)
+        base_sid = re.sub(r"__ext$", "", sid)
+        for cand_name in (base_sid, f"service-{base_sid}", f"run_{base_sid}"):
+            for ext in (".bat", ".cmd"):
+                p = os.path.join(root, cand_name + ext)
+                if os.path.isfile(p):
+                    return p
+        # 1) штатные шаблоны имён
         for pat in STRATEGY_BAT_PATTERNS:
             cand = pat.format(sid=sid)
             for ext in (".bat", ".cmd"):
@@ -508,10 +532,8 @@ class ZapretManager:
                     argv, cwd=cwd or None, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
-                    startupinfo=_startupinfo(),
-                    creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP
-                                   if IS_WINDOWS else 0),
                     text=True, encoding="utf-8", errors="replace",
+                    **_win_spawn_kwargs(new_group=True),
                 )
             except OSError as e:
                 self.status.last_error = f"Ошибка запуска: {e}"
@@ -543,9 +565,8 @@ class ZapretManager:
                     # завершаем дерево процессов (cmd -> bat -> badproxy)
                     subprocess.run(
                         ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                        startupinfo=_startupinfo(),
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                        timeout=10)
+                        timeout=10, **_win_spawn_kwargs())
                 else:
                     proc.terminate()
                 proc.wait(timeout=10)
@@ -594,8 +615,8 @@ class ZapretManager:
                 known = ("badproxy.exe", "tpws.exe", "nfqueue_bind.exe")
                 r = subprocess.run(
                     ["tasklist", "/FO", "CSV", "/NH"],
-                    startupinfo=_startupinfo(), capture_output=True,
-                    text=True, timeout=15)
+                    capture_output=True, text=True, timeout=15,
+                    **_win_spawn_kwargs())
                 root_low = (self.root() or "").lower()
                 for row in r.stdout.splitlines():
                     parts = row.strip('"').split('","')
@@ -606,9 +627,9 @@ class ZapretManager:
                         try:
                             subprocess.run(
                                 ["taskkill", "/F", "/PID", pid_s],
-                                startupinfo=_startupinfo(),
                                 stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, timeout=10)
+                                stderr=subprocess.DEVNULL, timeout=10,
+                                **_win_spawn_kwargs())
                             removed.append(f"{name} ({pid_s})")
                         except Exception:
                             pass
@@ -715,8 +736,9 @@ class ZapretManager:
         if not os.path.isfile(bat):
             raise FileNotFoundError("В комплекте не найден service.bat")
         r = subprocess.run(["cmd.exe", "/c", bat, "install"],
-                           cwd=self.root(), startupinfo=_startupinfo(),
-                           capture_output=True, text=True, timeout=120)
+                           cwd=self.root(),
+                           capture_output=True, text=True, timeout=120,
+                           **_win_spawn_kwargs())
         return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
 
     def uninstall_service(self):
@@ -724,8 +746,9 @@ class ZapretManager:
         if not os.path.isfile(bat):
             raise FileNotFoundError("В комплекте не найден service.bat")
         r = subprocess.run(["cmd.exe", "/c", bat, "uninstall"],
-                           cwd=self.root(), startupinfo=_startupinfo(),
-                           capture_output=True, text=True, timeout=120)
+                           cwd=self.root(),
+                           capture_output=True, text=True, timeout=120,
+                           **_win_spawn_kwargs())
         return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
 
     def set_autostart(self, enable: bool):

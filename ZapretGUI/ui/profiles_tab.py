@@ -1,12 +1,30 @@
 # -*- coding: utf-8 -*-
 """Вкладка «Профили и стратегия»: выбор списков доменов и стратегии запуска."""
 
+import os
+import re
 import threading
 
 import customtkinter as ctk
 
 from config.profiles import (DOMAIN_PROFILES, STRATEGIES,
                              DOMAIN_PROFILE_MAP, STRATEGY_MAP)
+from core.zapret_manager import list_bat_scripts
+
+
+def _bat_family(bat_name: str) -> str:
+    """«Семейство» стратегии по имени bat: alt_3_proton_gamer.bat -> alt3,
+    main_gamer.bat -> main, service-alt2.bat -> alt2 и т.п."""
+    stem = bat_name.rsplit(".", 1)[0].lower()
+    m = re.match(r"^(?:service[-_]?|run[-_]?|strategy[-_]?)?"
+                 r"(main|alt|zaproto|goodcheck|test|bp)", stem)
+    if not m:
+        return ""
+    fam = m.group(1)
+    if fam == "alt":
+        d = re.search(r"alt[-_]?(\d+)", stem)
+        fam = f"alt{d.group(1)}" if d else "alt"
+    return fam
 
 
 class ProfilesTab(ctk.CTkFrame):
@@ -68,10 +86,33 @@ class ProfilesTab(ctk.CTkFrame):
                      ).grid(row=0, column=0, padx=18, pady=(12, 6), sticky="w")
 
         self.strategy_var = ctk.StringVar(value=self.settings.get("strategy"))
-        strat_frame = ctk.CTkScrollableFrame(scard, height=210,
+        strat_frame = ctk.CTkScrollableFrame(scard, height=230,
                                              fg_color="transparent")
         strat_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 4))
         strat_frame.grid_columnconfigure(0, weight=1)
+
+        # --- секция «обнаружено в комплекте» (реальные bat-файлы пользователя)
+        self.detected_frame = ctk.CTkFrame(strat_frame, fg_color="transparent")
+        self._detected_lbl = ctk.CTkLabel(
+            self.detected_frame,
+            text="⚡ " + self.loc.t("detected_section"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#e8a33d")
+        self._detected_lbl.grid(row=0, column=0, padx=16, pady=(2, 2), sticky="w")
+        self._detected_note = ctk.CTkLabel(
+            self.detected_frame, text=self.loc.t("detected_note"),
+            font=ctk.CTkFont(size=11), text_color="gray55",
+            wraplength=760, justify="left")
+        self._detected_note.grid(row=1, column=0, padx=16, pady=(0, 4), sticky="w")
+        self.detected_btns = {}
+        self._detected_key = None
+        self.refresh_detected()
+
+        sep0 = ctk.CTkLabel(
+            strat_frame, text=self.loc.t("strategy_title"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="gray65")
+        sep0.grid(row=1, column=0, padx=16, pady=(8, 2), sticky="w")
         self.strategy_btns = {}
         prev_gamer = None
         for i, st in enumerate(STRATEGIES):
@@ -81,7 +122,7 @@ class ProfilesTab(ctk.CTkFrame):
                     strat_frame, text="🎮  " + self.loc.t("gamer_section"),
                     font=ctk.CTkFont(size=12, weight="bold"),
                     text_color="#5b9bd5")
-                sep.grid(row=i, column=0, padx=16, pady=(10, 2), sticky="w")
+                sep.grid(row=i + 2, column=0, padx=16, pady=(10, 2), sticky="w")
             prev_gamer = st.gamer
             label = f"{st.name}"
             if st.recommended:
@@ -93,7 +134,7 @@ class ProfilesTab(ctk.CTkFrame):
                 variable=self.strategy_var, value=st.id,
                 font=ctk.CTkFont(size=13),
                 command=lambda s=st: self._strategy_hint(s))
-            rb.grid(row=i + 1, column=0, padx=16, pady=3, sticky="w")
+            rb.grid(row=i + 3, column=0, padx=16, pady=3, sticky="w")
             self.strategy_btns[st.id] = rb
 
         self.hint_lbl = ctk.CTkLabel(
@@ -172,5 +213,91 @@ class ProfilesTab(ctk.CTkFrame):
 
     def on_show(self):
         # синхронизировать виджеты с текущими настройками
+        self.refresh_detected()
         self.profile_var.set(self.settings.get("profile"))
         self.strategy_var.set(self.settings.get("strategy"))
+
+    # ------------------------------------------------- обнаружение bat-файлов
+    def _scan_kit_bats(self) -> dict:
+        """Сканирует реальный комплект и возвращает {bat_name: (sid, gamer)}.
+
+        sid — ближайшая известная стратегия GUI; если её нет — генерируется
+        новый id на основе имени файла, чтобы показать ВСЕ стратегии комплекта.
+        """
+        root = self.manager.root()
+        if not root:
+            return {}
+        try:
+            bats = list_bat_scripts(root)
+        except OSError:
+            return {}
+        service_bats = [b for b in bats if b.lower().startswith("service")] \
+            or bats
+        out = {}
+        known_sids = set(STRATEGY_MAP)
+        for b in service_bats:
+            low = b.rsplit(".", 1)[0].lower()
+            if not re.match(r"^(?:service[-_]?|run[-_]?|strategy[-_]?)?"
+                            r"(main|alt|zaproto)", low):
+                continue                      # goodcheck/update и пр. — не стратегии
+            gamer = "gamer" in low or low.endswith("_gmr")
+            fam = _bat_family(b)
+            sid = None
+            if fam:
+                cand = f"{fam}_gamer" if gamer else fam
+                if cand in known_sids:
+                    sid = cand
+                else:
+                    for st in STRATEGIES:
+                        core = st.id[:-6] if st.id.endswith("_gamer") else st.id
+                        if core.replace("_", "") == fam.replace("_", "") \
+                                and st.gamer == gamer:
+                            sid = st.id
+                            break
+            if not sid:
+                clean = re.sub(r"^(?:service[-_]?|run[-_]?|strategy[-_]?)", "", low)
+                sid = clean + ("__ext" if clean in known_sids else "")
+            out[b] = (sid, gamer)
+        return out
+
+    def refresh_detected(self):
+        """Перестраивает секцию «Обнаружено в комплекте» по фактическим bat."""
+        detected = self._scan_kit_bats()
+        key = "|".join(sorted(f"{k}:{v[0]}" for k, v in detected.items()))
+        if key == self._detected_key:
+            return                              # ничего не изменилось
+        self._detected_key = key
+        for w in list(self.detected_btns.values()):
+            w.destroy()
+        self.detected_btns = {}
+        if not detected:
+            self.detected_frame.grid_remove()
+            return
+        self.detected_frame.grid(row=0, column=0, sticky="ew")
+        seen = set()
+        rows = sorted(detected.items(),
+                      key=lambda kv: (not kv[1][1], kv[1][0]))
+        for r, (bat, (sid, gamer)) in enumerate(rows, start=2):
+            if sid in seen:
+                continue
+            seen.add(sid)
+            name = os.path.splitext(bat)[0]
+            label = f"{name}   ({bat})" + ("  🎮" if gamer else "")
+            rb = ctk.CTkRadioButton(
+                self.detected_frame, text=label,
+                variable=self.strategy_var, value=sid,
+                font=ctk.CTkFont(size=13),
+                command=lambda s=sid, g=gamer, n=name: self._detected_hint(s, g, n))
+            rb.grid(row=r, column=0, padx=16, pady=2, sticky="w")
+            self.detected_btns[sid] = rb
+
+    def _detected_hint(self, sid, gamer, name):
+        st = STRATEGY_MAP.get(sid)
+        if st:
+            self._strategy_hint(st)
+        else:
+            txt = "Стратегия из вашего комплекта: " + name
+            if gamer:
+                txt += ("\n🎮 Геймерский режим: обходятся только игровые домены "
+                        "из списка комплекта, остальной трафик идёт напрямую.")
+            self.hint_lbl.configure(text=txt)

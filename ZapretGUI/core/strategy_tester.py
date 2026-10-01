@@ -38,6 +38,11 @@ from dataclasses import dataclass, field
 IS_WINDOWS = sys.platform.startswith("win")
 
 
+# CREATE_NO_WINDOW — окно консоли не создаётся вообще (в отличие от
+# SW_HIDE, которое лишь скрывает уже созданное окно и даёт «мелькание»).
+NO_WINDOW_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
+
+
 def _startupinfo():
     if not IS_WINDOWS:
         return None
@@ -315,7 +320,8 @@ class StrategyTester:
                     argv, cwd=root, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
                     startupinfo=_startupinfo(),
-                    creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP
+                    creationflags=(NO_WINDOW_FLAGS
+                                   | subprocess.CREATE_NEW_PROCESS_GROUP
                                    if IS_WINDOWS else 0))
             except OSError:
                 continue

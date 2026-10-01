@@ -96,6 +96,8 @@ LOCALES = {
         "test_warning": "Во время теста сервис будет перезапускаться — возможны "
                         "короткие обрывы соединения. Не запускайте во время игры/звонка.",
         # геймерский режим
+        "detected_section": "⚡ Обнаружено в вашем комплекте",
+        "detected_note": "Эти стратегии найдены в .bat-файлах указанной папки комплекта. Выберите нужную и нажмите «Применить».",
         "gamer_badge": "🎮 геймерский",
         "gamer_section": "Геймерские режимы (только игровые домены)",
         "gamer_explain": "В геймерском режиме обходятся только игровые домены "
@@ -203,6 +205,8 @@ LOCALES = {
         "test_need_strategies": "Select at least one strategy to test.",
         "test_warning": "The service will restart during the test — expect short "
                         "connection drops. Do not run while gaming or in a call.",
+        "detected_section": "⚡ Detected in your kit",
+        "detected_note": "These strategies were found among the .bat files of the selected kit folder. Pick one and press Apply.",
         "gamer_badge": "🎮 gamer",
         "gamer_section": "Gamer modes (game domains only)",
         "gamer_explain": "Gamer mode bypasses only game domains (Steam, Epic, Battle.net, "

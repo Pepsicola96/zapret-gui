@@ -122,6 +122,9 @@ class TestTab(ctk.CTkFrame):
                               pady=(2, 6))
         self.strat_frame.grid_columnconfigure(0, weight=1)
         scrollable_frame_wheel(self.strat_frame)
+        self.check_vars = {}
+        self._strategy_names = {}      # sid -> отображаемое имя (вкл. bat-имена)
+        self._detected_key = None
         self._build_strategy_checks()
 
         # ---------------- кнопки запуска теста -------------------------------
@@ -232,21 +235,62 @@ class TestTab(ctk.CTkFrame):
 
     # ------------------------------------------------------------- построение
     def _build_strategy_checks(self):
+        """Чекбоксы стратегий: встроенный список + реальные bat из комплекта."""
         default_sid = self.settings.get("strategy", "alt2")
         gamer_default = {"main_gamer", "alt1_gamer", "alt2_gamer",
                          "alt3_gamer", "alt4_proton_gamer"}
-        row = 0
+        # собираем пары (sid, имя, gamer) — сначала известные стратегии
+        entries = []
+        seen_sids = set()
         for st in STRATEGIES:
-            var = ctk.BooleanVar(value=(st.id == default_sid or
-                                        st.id in gamer_default or
-                                        st.recommended))
-            badge = ("  🎮" if st.gamer else "") + \
-                    ("  ⭐" if st.recommended else "")
-            cb = ctk.CTkCheckBox(self.strat_frame, text=st.name + badge,
+            entries.append((st.id, st.name, st.gamer,
+                            st.id == default_sid or st.id in gamer_default
+                            or st.recommended))
+            seen_sids.add(st.id)
+        # затем обнаруженные bat-файлы, для которых sid ещё не показан
+        detected = {}
+        try:
+            detected = self.app.tabs["profiles"]._scan_kit_bats()
+        except Exception:
+            pass
+        for bat, (sid, gamer) in sorted(detected.items()):
+            if sid in seen_sids:
+                continue
+            seen_sids.add(sid)
+            name = bat.rsplit(".", 1)[0]
+            entries.append((sid, name, gamer, False))
+
+        row = 0
+        self.check_vars.clear()
+        self._strategy_names.clear()
+        for sid, name, gamer, checked in entries:
+            var = ctk.BooleanVar(value=checked)
+            badge = ("  🎮" if gamer else "") + \
+                    ("  ⭐" if sid in STRATEGY_MAP and
+                     STRATEGY_MAP[sid].recommended else "")
+            cb = ctk.CTkCheckBox(self.strat_frame, text=name + badge,
                                  variable=var, font=ctk.CTkFont(size=13))
             cb.grid(row=row, column=0, padx=14, pady=3, sticky="w")
-            self.check_vars[st.id] = var
+            self.check_vars[sid] = var
+            self._strategy_names[sid] = name + badge.strip()
             row += 1
+
+    def refresh_detected(self):
+        """Пересоздать список с учётом bat-файлов текущего комплекта."""
+        old_sel = {sid: v.get() for sid, v in self.check_vars.items()}
+        self._detected_key = None
+        for w in self.strat_frame.winfo_children():
+            w.destroy()
+        self._build_strategy_checks()
+        for sid, val in old_sel.items():          # сохранить выбор
+            if sid in self.check_vars:
+                self.check_vars[sid].set(val)
+        self._update_detected_key()
+
+    def _update_detected_key(self):
+        root = self.manager.root() or ""
+        self._detected_key = (root, tuple(sorted(
+            (sid, v.get()) for sid, v in self.check_vars.items())))
 
     def _set_all(self, val: bool):
         for var in self.check_vars.values():
@@ -254,7 +298,7 @@ class TestTab(ctk.CTkFrame):
 
     # ------------------------------------------------------------------- run
     def _selected_ids(self):
-        return [st.id for st in STRATEGIES if self.check_vars[st.id].get()]
+        return [sid for sid, var in self.check_vars.items() if var.get()]
 
     def _run(self):
         if not self.manager.root():
@@ -300,13 +344,14 @@ class TestTab(ctk.CTkFrame):
         if sid and sid in self.row_widgets:
             self.row_widgets[sid]["status"].configure(text=txt)
             self.progress_lbl.configure(
-                text=f"{self.loc.t('test_running')}: {STRATEGY_MAP[sid].name} — {txt}")
+                text="%s: %s — %s" % (self.loc.t('test_running'),
+                                      self._strategy_names.get(sid, sid), txt))
         elif phase == "cleanup":
             self.progress_lbl.configure(text=txt)
 
     def _add_row(self, sid, status_txt):
-        st = STRATEGY_MAP.get(sid)
-        name = st.name + ("  🎮" if st and st.gamer else "")
+        name = self._strategy_names.get(sid) or \
+               (STRATEGY_MAP[sid].name if sid in STRATEGY_MAP else sid)
         row = len(self.row_widgets)
         odd = row % 2
         bg = ("gray86", "gray20") if odd else ("gray90", "gray16")
@@ -375,10 +420,9 @@ class TestTab(ctk.CTkFrame):
         best = max(tested, key=lambda r: r.score())
         if best.successes > 0:
             self.best_sid = best.strategy_id
-            st = STRATEGY_MAP.get(best.strategy_id)
             self.best_lbl.configure(
                 text=f"🏆 {self.loc.t('test_best')}: "
-                     f"{st.name if st else best.strategy_id} "
+                     f"{self._strategy_names.get(best.strategy_id, best.strategy_id)} "
                      f"({round(best.success_rate * 100)}%, "
                      f"{best.avg_latency:.0f} ms)",
                 text_color="#2fa572")
@@ -410,7 +454,10 @@ class TestTab(ctk.CTkFrame):
         self.settings.set("strategy", self.best_sid)
         self.settings.save()
         self.app.tabs["profiles"].strategy_var.set(self.best_sid)
-        hint = STRATEGY_MAP[self.best_sid].description
+        st = STRATEGY_MAP.get(self.best_sid)
+        hint = st.description if st else (
+            "Стратегия из вашего комплекта: "
+            + self._strategy_names.get(self.best_sid, self.best_sid))
         self.app.tabs["profiles"].hint_lbl.configure(text=hint)
         self.progress_lbl.configure(
             text=f"✔ {self.loc.t('strategy')}: {self.best_sid}")
@@ -419,6 +466,11 @@ class TestTab(ctk.CTkFrame):
             threading.Thread(target=self.manager.restart, daemon=True).start()
 
     def on_show(self):
+        # комплект мог смениться — пересобрать список стратегий
+        cur_key = (self.manager.root() or "", tuple(sorted(
+            (sid, v.get()) for sid, v in self.check_vars.items())))
+        if cur_key != self._detected_key:
+            self.refresh_detected()
         # если есть результаты прошлого теста и текущий список пуст —
         # показываем напоминание о победителе
         if not self._results and self.row_widgets:
