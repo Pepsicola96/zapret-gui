@@ -8,7 +8,8 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from core.zapret_manager import find_zapret_root, IS_WINDOWS
+from core.zapret_manager import (find_zapret_root, resolve_root, IS_WINDOWS,
+                                list_bat_scripts)
 
 
 class SettingsTab(ctk.CTkFrame):
@@ -130,24 +131,42 @@ class SettingsTab(ctk.CTkFrame):
 
     # -------------------------------------------------------------- handlers
     def _validate(self):
+        """Проверяет путь и автоматически спускается вложенную папку комплекта."""
         d = self.path_var.get().strip()
-        ok = bool(d) and os.path.isdir(d) and (
-            os.path.isdir(os.path.join(d, "bin"))
-            or os.path.isfile(os.path.join(d, "bp.bat"))
-            or any(f.endswith(".bat") for f in os.listdir(d)
-                   if os.path.isfile(os.path.join(d, f))))
         if not d:
             self.valid_lbl.configure(text="⚠ " + self.loc.t("msg_need_path"),
                                      text_color="#d4a017")
-        elif ok:
+            return False
+
+        resolved, err = resolve_root(d)
+        if err:  # папки вообще нет
+            self.valid_lbl.configure(text="✘ " + err.replace("\n", " — "),
+                                     text_color="#c0392b")
+            return False
+        if resolved and os.path.normcase(resolved) != os.path.normcase(
+                os.path.abspath(d)):
+            # пользователь указал обёртку/родительскую папку — исправляем сами
+            self.path_var.set(resolved)
+            d = resolved
+
+        bats = list_bat_scripts(d)
+        ok = bool(d) and os.path.isdir(d) and (
+            os.path.isdir(os.path.join(d, "bin"))
+            or os.path.isfile(os.path.join(d, "bp.bat"))
+            or bool(bats))
+        if ok:
+            extra = f"  ({len(bats)} bat-скриптов)" if bats else ""
             self.valid_lbl.configure(
-                text="✔ Комплект найден" if self.loc.lang == "ru"
-                else "✔ Kit found", text_color="#2fa572")
+                text=("✔ Комплект найден" + extra) if self.loc.lang == "ru"
+                else (f"✔ Kit found ({len(bats)} bat scripts)" if bats
+                      else "✔ Kit found"),
+                text_color="#2fa572")
         else:
             self.valid_lbl.configure(
-                text="✘ В этой папке не похожи на комплект zapret-discord-youtube"
+                text="✘ В этой папке нет скриптов zapret (.bat / bin). "
+                     "Укажите корневую папку комплекта."
                 if self.loc.lang == "ru" else
-                "✘ Doesn't look like a zapret-discord-youtube kit",
+                "✘ No zapret scripts (.bat / bin) here. Point to the kit root.",
                 text_color="#c0392b")
         return ok
 
@@ -159,6 +178,9 @@ class SettingsTab(ctk.CTkFrame):
 
     def _autodetect(self):
         found = find_zapret_root(self.path_var.get() or "")
+        if not found:
+            # расширенный поиск: из указанного пути, из HOME, рядом с GUI
+            found = find_zapret_root("")
         if found:
             self.path_var.set(found)
         else:
@@ -186,7 +208,12 @@ class SettingsTab(ctk.CTkFrame):
 
     def _save(self):
         path = self.path_var.get().strip()
-        self.settings.set("zapret_path", path)
+        # нормализуем и при необходимости спускаемся в реальную папку комплекта
+        resolved, err = resolve_root(path) if path else ("", "")
+        final_path = resolved or path
+        self.settings.set("zapret_path", final_path)
+        self.path_var.set(final_path)
+        self._validate()
         self.settings.set("theme", self.theme_var.get())
         self.settings.set("language", self.lang_var.get())
         self.settings.set("minimize_to_tray", self.tray_var.get())

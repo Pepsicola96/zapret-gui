@@ -288,11 +288,10 @@ class StrategyTester:
 
         candidates = []
         if IS_WINDOWS:
-            for pat in ("service-{sid}.bat", "{sid}.bat",
-                        "run_{sid}.bat", "strategy_{sid}.bat"):
-                p = os.path.join(root, pat.format(sid=sid))
-                if os.path.isfile(p):
-                    candidates.append(["cmd.exe", "/c", p])
+            gamer = bool(getattr(strat, "gamer", False))
+            bat = self.manager.find_strategy_bat(sid, gamer)
+            if bat:
+                candidates.append(["cmd.exe", "/c", bat])
             bp = os.path.join(root, "bp.bat")
             if os.path.isfile(bp):
                 candidates.append(["cmd.exe", "/c", bp] + base_args + list_args)

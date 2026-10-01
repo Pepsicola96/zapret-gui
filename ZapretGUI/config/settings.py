@@ -110,9 +110,14 @@ class Settings:
         d = self.zapret_dir()
         if not d:
             return False
-        # признаки комплекта: папка bin или файлы bp.bat
+        # признаки комплекта: папка bin или файлы bp.bat / *.bat в корне
+        try:
+            entries = os.listdir(d)
+        except OSError:
+            return False
         return (os.path.isdir(os.path.join(d, "bin"))
-                or os.path.isfile(os.path.join(d, "bp.bat")))
+                or os.path.isfile(os.path.join(d, "bp.bat"))
+                or any(f.lower().endswith((".bat", ".cmd")) for f in entries))
 
     def active_lists(self):
         """Список активных имён профилей доменов с учётом тонких переключателей."""

@@ -44,7 +44,58 @@ STRATEGY_BAT_PATTERNS = [
     "service-{sid}.bat", "{sid}.bat", "run_{sid}.bat", "strategy_{sid}.bat",
 ]
 
-CHECK_FILES = ("bp.bat", "zapret-bin", "bin", "lists", "readme.md")
+CHECK_FILES = ("bp.bat", "zapret-bin", "bin", "lists", "readme.md",
+               "info.txt", "windivert.dll", "windivert")
+
+# признаки того, что папка вообще как-то связана с zapret (для подсказок)
+ZAPRET_NAME_HINTS = ("zapret", "discord-youtube", "flowseal")
+
+
+def _norm(p: str) -> str:
+    """Нормализация пути: убираем кавычки, завершающие слеши, пробелы."""
+    if not p:
+        return ""
+    p = p.strip().strip('"').strip("'")
+    while len(p) > 3 and (p.endswith(os.sep) or p.endswith("/")):
+        p = p[:-1]
+    # нормализуем разделители и «лишние» фрагменты вида //, \.\, C:/...
+    if IS_WINDOWS:
+        p = p.replace("/", "\\")
+    else:
+        p = os.path.expanduser(p.replace("\\", "/"))
+        p = "/" + p.lstrip("/")
+    return os.path.normpath(p)
+
+
+def list_bat_scripts(root: str) -> list:
+    """Все .bat/.cmd файлы в корне комплекта (без вложенных папок)."""
+    result = []
+    try:
+        for name in sorted(os.listdir(root)):
+            if name.lower().endswith((".bat", ".cmd")):
+                p = os.path.join(root, name)
+                if os.path.isfile(p):
+                    result.append(name)
+    except OSError:
+        pass
+    return result
+
+
+def looks_executable_capable(root: str) -> bool:
+    """Есть ли в комплекте хоть какой-то исполняемый скрипт/бинарник."""
+    if not root or not os.path.isdir(root):
+        return False
+    if list_bat_scripts(root):
+        return True
+    bin_dir = os.path.join(root, "bin")
+    if os.path.isdir(bin_dir):
+        try:
+            for f in os.listdir(bin_dir):
+                if f.lower().endswith((".exe", ".dll", ".sh")):
+                    return True
+        except OSError:
+            pass
+    return False
 
 
 def find_zapret_root(hint_dir: str = "") -> str:
@@ -96,8 +147,59 @@ def find_zapret_root(hint_dir: str = "") -> str:
 def _looks_like_zapret(path: str) -> bool:
     entries = {e.lower() for e in os.listdir(path)} if os.path.isdir(path) else set()
     score = sum(1 for f in CHECK_FILES if f in entries)
-    has_bat = any(e.endswith(".bat") for e in entries)
+    has_bat = any(e.endswith((".bat", ".cmd")) for e in entries)
     return score >= 2 or (has_bat and ("lists" in entries or "bin" in entries))
+
+
+def resolve_root(path: str) -> tuple:
+    """Превращает путь, указанный пользователем, в корень комплекта.
+
+    Пользователь часто указывает папку архива/обёртку (например
+    \\...\\zapret-discord-youtube-1.10.1), тогда как сам комплект лежит
+    на уровень глубже (\\...\\zapret-discord-youtube-1.10.1\\zapret-discord-youtube-1.10.1).
+    Эта функция спускается в подпапки и поднимается наверх, если пользователь
+    указал внутренности комплекта.
+
+    Возвращает (корень_комплекта, пояснение_или_пустая_строка).
+    Если найти не удалось — возвращает (нормализованный исходный путь, "")
+    либо ("", сообщение_об_ошибке), если папки вообще нет.
+    """
+    p = _norm(path)
+    if not p:
+        return "", ""
+    if not os.path.isdir(p):
+        return "", f"Папка не существует:\n{p}"
+
+    # 1) это и есть корень комплекта
+    if _looks_like_zapret(p):
+        return p, ""
+
+    # 2) комплект на уровень ниже (типично для распакованных zip)
+    try:
+        subs = sorted(os.listdir(p))
+    except OSError as e:
+        return "", f"Не удалось прочитать папку ({e}):\n{p}"
+    for name in subs:
+        sub = os.path.join(p, name)
+        try:
+            if os.path.isdir(sub) and _looks_like_zapret(sub):
+                return sub, ""
+        except OSError:
+            continue
+
+    # 3) пользователь указал внутреннюю папку комплекта (bin / lists / windiv)
+    parent = os.path.dirname(p)
+    base_low = os.path.basename(p).lower()
+    if base_low in ("bin", "lists", "windiv", "docs", "badproxy") \
+            and parent and _looks_like_zapret(parent):
+        return parent, ""
+
+    # 4) имя папки похоже на zapret и внутри есть .bat — считаем комплектом
+    if any(h in os.path.basename(p).lower() for h in ZAPRET_NAME_HINTS) \
+            and looks_executable_capable(p):
+        return p, ""
+
+    return p, ""
 
 
 # ---------------------------------------------------------------------------
@@ -140,13 +242,118 @@ class ZapretManager:
 
     # ---------------- базовые пути ----------------------------------------
     def root(self) -> str:
-        return self.settings.zapret_dir()
+        """Корень комплекта с учётом вложенных папок после распаковки."""
+        raw = self.settings.zapret_dir()
+        if not raw:
+            return ""
+        resolved, _note = resolve_root(raw)
+        return resolved or raw
 
     def lists_dir(self) -> str:
         return os.path.join(self.root(), "lists")
 
     def log_file(self) -> str:
         return os.path.join(self.root() or os.getcwd(), "zapret_gui.log")
+
+    # ---------------- обнаружение bat-скриптов -----------------------------
+    @staticmethod
+    def _bat_matches(bat_name: str, sid: str, gamer: bool) -> bool:
+        """Имя .bat соответствует запрошенной стратегии (в т.ч. геймерской).
+
+        Совпадение по «ядру» имени: из обоих имён вырезаются все цифры и
+        служебные слова — например alt3_gamer ↔ alt_3_proton_gamer дают ядро
+        {'alt','gamer'} ↔ {'alt','proton','gamer'}, где первое ⊆ второго.
+        """
+        noise = {"service", "run", "strategy", "bat", "cmd"}
+
+        def core(name):
+            parts = [p for p in re.split(r"[_\-. ]+", name.lower()) if p]
+            is_gamer = ("gamer" in parts or "gmr" in parts
+                        or name.lower().endswith("gmr"))
+            cleaned = {re.sub(r"\d+", "", p) for p in parts}
+            cleaned -= {"", "gamer", "gmr"} | noise
+            return is_gamer, cleaned
+
+        bat_gamer, bat_core = core(bat_name.rsplit(".", 1)[0])
+        if bat_gamer != gamer:
+            return False
+        sid_gamer, sid_core = core(sid)
+        if not sid_core or not bat_core:
+            return False
+        # ядро стратегии должно содержаться в имени bat (или наоборот),
+        # при этом оба должны относиться к одному семейству (первое слово)
+        if sid_core <= bat_core or bat_core <= sid_core:
+            # сравниваем «первое значимое слово» имён (семейство alt/main/...)
+            skip = {"gamer", "gmr"} | noise
+
+            def first_token(name):
+                for p in re.split(r"[_\-. ]+", name.lower()):
+                    c = re.sub(r"\d+", "", p)
+                    if c and c not in skip:
+                        return c
+                return ""
+            return first_token(sid) == first_token(bat_name)
+        return False
+
+    def find_strategy_bat(self, sid: str, gamer: bool) -> str:
+        """Ищет .bat стратегии в корне комплекта; '' если не найдено."""
+        root = self.root()
+        if not root:
+            return ""
+        # 1) точные шаблоны имён
+        for pat in STRATEGY_BAT_PATTERNS:
+            cand = pat.format(sid=sid)
+            for ext in (".bat", ".cmd"):
+                p = os.path.join(root, cand + ext) if not cand.endswith(ext) \
+                    else os.path.join(root, cand)
+                if os.path.isfile(p):
+                    return p
+        # 2) неформатированные варианты с суффиксом gamer
+        variants = [f"{sid}_gamer.bat", f"service-{sid}_gamer.bat"] if gamer \
+            else []
+        for v in variants:
+            p = os.path.join(root, v)
+            if os.path.isfile(p):
+                return p
+        # 3) эвристический поиск по всем bat-файлам
+        try:
+            bats = list_bat_scripts(root)
+        except OSError:
+            bats = []
+
+        def score(b):
+            """Чем меньше, тем точнее совпадение имени bat со стратегией."""
+            low = b.lower().rsplit(".", 1)[0]
+            sid_low = sid.lower()
+            if low == sid_low:
+                return 0
+            if low.replace("_", "").replace("-", "") == \
+               sid_low.replace("_", "").replace("-", "").replace("gamer", "") + \
+               ("gamer" if gamer else ""):
+                return 1
+            parts = [p for p in re.split(r"[_\-. ]+", low) if p]
+            # точное совпадение с учётом цифр: alt_3 ~ alt3
+            digits_sid = "".join(re.findall(r"\d+", sid_low))
+            digits_bat = "".join(re.findall(r"\d+", low))
+            fam_sid = re.match(r"[a-z]+", sid_low).group() if \
+                re.match(r"[a-z]+", sid_low) else ""
+            fam_bat = re.match(r"[a-z]+", low).group() if \
+                re.match(r"[a-z]+", low) else ""
+            if fam_sid and fam_sid == fam_bat and digits_sid == digits_bat \
+                    and digits_sid:
+                return 2
+            return 5
+
+        exact = [(score(b), len(b), b.lower(), b) for b in bats
+                 if self._bat_matches(b, sid, gamer)]
+        # совпадения с цифрами (уровень <=2) не перекрываются «голым» семейством
+        strong = [t for t in exact if t[0] <= 2]
+        pool = strong if strong else exact
+        if pool:
+            pool.sort(key=lambda t: (not t[3].lower().startswith("service"),
+                                     t[0], t[1], t[2]))
+            return os.path.join(root, pool[0][3])
+        return ""
 
     # ---------------- команда запуска --------------------------------------
     def _profile_list_args(self):
@@ -186,6 +393,7 @@ class ZapretManager:
 
         from config.profiles import STRATEGY_MAP
         strat = STRATEGY_MAP.get(sid)
+        gamer = bool(getattr(strat, "gamer", False))
         base_args = list(strat.args) if strat else []
         extra = self.settings.get("custom_args", "").strip()
         if extra:
@@ -199,11 +407,10 @@ class ZapretManager:
                 if os.path.isfile(p):
                     return ["/bin/sh", p] + base_args, root
 
-        # 1) штатный .bat стратегии из комплекта
-        for pat in STRATEGY_BAT_PATTERNS:
-            bat = os.path.join(root, pat.format(sid=sid))
-            if os.path.isfile(bat):
-                return ["cmd.exe", "/c", bat], root
+        # 1) штатный .bat стратегии из комплекта (в т.ч. *_gamer.bat)
+        bat = self.find_strategy_bat(sid, gamer)
+        if bat:
+            return ["cmd.exe", "/c", bat], root
 
         # 2) универсальный bp.bat + аргументы стратегии
         bp = os.path.join(root, "bp.bat")
@@ -222,13 +429,64 @@ class ZapretManager:
             p = os.path.join(root, exe.replace("/", os.sep))
             if os.path.isfile(p):
                 args = base_args + self._profile_list_args()
-                launcher = [p] if IS_WINDOWS else [p]
-                return launcher + args, root
+                return [p] + args, root
 
-        raise FileNotFoundError(
-            "Не найден ни один исполняемый скрипт Zapret в папке:\n"
-            f"{root or '(папка не указана)'}\n"
-            "Укажите корректный путь к комплекту в разделе «Настройки».")
+        # 4) fallback: любой bat стратегии, чтобы не оставлять пользователя
+        #    без рабочего запуска (например выбрана alt3, а в комплекте только alt2)
+        for b in list_bat_scripts(root):
+            low = b.lower()
+            if low in ("service.bat", "uninstall_service.bat",
+                       "delete_service.bat", "mips64el.bat"):
+                continue
+            if low.startswith(("cmd_", "check", "update")):
+                continue
+            if gamer != ("gamer" in low or "_gmr" in low):
+                continue
+            return ["cmd.exe", "/c", os.path.join(root, b)], root
+
+        raise FileNotFoundError(self._no_executable_message(root))
+
+    def _no_executable_message(self, root: str) -> str:
+        """Подробная подсказка: почему ничего не найдено и что делать."""
+        ru = self.settings.get("language", "ru") == "ru"
+        lines = []
+        if ru:
+            lines.append("Не найден ни один исполняемый скрипт Zapret.")
+            lines.append(f"Проверяемая папка: {root or '(путь не указан)'}")
+            if not root or not os.path.isdir(root):
+                lines.append("Папка не существует — проверьте путь в «Настройках».")
+            elif any(h in os.path.basename(root).lower()
+                     for h in ZAPRET_NAME_HINTS):
+                bats = list_bat_scripts(root)
+                if bats:
+                    lines.append("В папке есть bat-файлы, но ни один не подходит "
+                                 "под стратегию: " + ", ".join(bats[:12]))
+                    lines.append("Попробуйте выбрать другую стратегию на вкладке "
+                                 "«Профили» или запустите комплект через его родной "
+                                 "ярлык.")
+                else:
+                    lines.append("Похоже, комплект распакован не полностью "
+                                 "(нет .bat-скриптов и папки bin с exe). "
+                                 "Распакуйте архив целиком (например 7-Zip'ом) "
+                                 "или скачайте полный релиз заново.")
+            else:
+                lines.append("Эта папка не похожа на комплект "
+                             "zapret-discord-youtube. Укажите корневую папку "
+                             "комплекта (где лежат *.bat и папка bin/lists) "
+                             "в разделе «Настройки», либо нажмите «Определить "
+                             "автоматически».")
+        else:
+            lines.append("No executable Zapret script found.")
+            lines.append(f"Checked folder: {root or '(path not set)'}")
+            if not root or not os.path.isdir(root):
+                lines.append("Folder does not exist - fix the path in Settings.")
+            else:
+                lines.append("This folder doesn't look like a complete "
+                             "zapret-discord-youtube kit. Point to its root "
+                             "(where *.bat and bin/lists live) in Settings.")
+        return "\n".join(lines) + \
+            ("\nУкажите корректный путь к комплекту в разделе «Настройки»."
+             if ru else "\nSet the correct kit path in the Settings tab.")
 
     # ---------------- запуск / остановка -----------------------------------
     def start(self) -> bool:
